@@ -1,8 +1,8 @@
 
 import sys,os
 import numpy as N
-import pylab
-import cPickle as pickle
+#import pylab
+import pickle
 import time
 from scipy.interpolate import interp1d,UnivariateSpline,interp2d
 
@@ -17,7 +17,7 @@ class SimBox:
     sigv = 2.
     f = 0.5
 
-    def __init__(self, k=None, pk=None, shape=None, length=None, lognorm=False, applywindow=True, pkgrid=None, cachefile="cache/pkgrid_%s.pickle",
+    def __init__(self, k=None, pk=None, shape=None, length=None, lognorm=False, applywindow=True, apply_rsd=False, pkgrid=None, cachefile="cache/pkgrid_%s.pickle",
                  verbose=True):
         """ """
         self.verbose = verbose
@@ -35,8 +35,8 @@ class SimBox:
 
         self.lognorm = lognorm
         self.applywindow = applywindow
-
-        print self.dim,self.length,self.maxlength
+        self.apply_rsd = apply_rsd
+        print(self.dim,self.length,self.maxlength)
 
         self.cfmaxr = self.cfmax*length[0]
 
@@ -53,7 +53,7 @@ class SimBox:
             tag = "%i_%i_%i_%i"%(self.shape[0],self.shape[1],self.shape[2],self.length[-1])
             cachefile = self.cachefile%tag
             if os.path.exists(cachefile):
-                print "loading from cache",cachefile
+                print ("loading from cache",cachefile)
                 self.pkgrid = pickle.load(file(cachefile))
                 return
 
@@ -84,13 +84,13 @@ class SimBox:
         lj = lj.flatten()
 
         if self.verbose:
-            print "min,max log10(k):", j.min(),j.max(),lj.min(),lj.max()
+            print ("min,max log10(k):", j.min(),j.max(),lj.min(),lj.max())
 
         p = lj*0.
         lk = N.log10(self.k)
     
         if self.verbose:
-            print "min,max log10(k):",lk.min(),lk.max()
+            print ("min,max log10(k):",lk.min(),lk.max())
 
         #assert(lk.min()<lj.min())
         #assert(lk.max()>lj.max())
@@ -98,14 +98,15 @@ class SimBox:
         p = 10**N.interp(lj,lk,N.log10(self.pk),left=0,right=0)
 
         # apply redshift space distortions incl. velocity dispersion
-        # print "Rsd"
-        #p *= (self.bias+self.f*mu**2)*N.exp(-(j*mu*self.sigv)**2)
+        if self.apply_rsd:
+            print ("Applying RSD")
+            p *= (self.bias+self.f*mu**2)*N.exp(-(j*mu*self.sigv)**2)
 
         p[0] = 0
         p = p.reshape(self.shape)
 
         if self.applywindow:
-            print "> applying cell window function"
+            print ("> applying cell window function")
             w = 1.
             for i in range(len(kgrid)):
                 x = kgrid[i]*self.step/2.
@@ -120,11 +121,11 @@ class SimBox:
             "> Computing log power spectrum ~~~~~~~~~~"
             xi = 1./self.volume*fftutils.gofftinv(p.astype('complex')).real
             if not N.all(xi.real>-1):
-                print >>sys.stderr, "!!!!"
-                print >>sys.stderr, "!!!! simbox fatal error with log transform! P(k) amp is too high maybe..."
+                print ("!!!!", file=sys.stderr)
+                print ("!!!! simbox fatal error with log transform! P(k) amp is too high maybe...", file=sys.stderr)
                 exit(1)
             logxi = N.log(1+xi)
-            print "xi0",logxi.flat[0]
+            print ("xi0",logxi.flat[0])
             p = self.volume*N.abs(fftutils.gofft(logxi))
             
 
@@ -143,7 +144,7 @@ class SimBox:
     def realize(self):
         """realize a random gaussian field"""
         if self.verbose:
-            print "> dreaming of gaussian fields",self.shape
+            print ("> dreaming of gaussian fields",self.shape)
         t0 = time.time()
 
         while True:
@@ -164,8 +165,8 @@ class SimBox:
         t1 = time.time()
         out = fftutils.gofftinv(grid)
         if self.verbose:
-            print " % fft time:",time.time()-t1
-            print "> done, seconds:",time.time()-t0
+            print (" % fft time:",time.time()-t1)
+            print ("> done, seconds:",time.time()-t0)
         return out.real
 
 
@@ -201,14 +202,14 @@ class SimBox:
         xi = xi.flatten().real
 
         if False:
-            print mu.min(),mu.max()
-            print r.min(),r.max(),self.step
+            print (mu.min(),mu.max())
+            print (r.min(),r.max(),self.step)
 
             bins = N.arange(0,r.max(),2*self.step)
             data = N.transpose([r*mu,r*N.sqrt(1-mu**2)])
-            print data.shape,xi.shape
+            print (data.shape,xi.shape)
             assert(N.all(N.isfinite(xi)))
-            print xi
+            print (xi)
             h,e = N.histogramdd(data,(bins,bins),weights=xi)
             c,e = N.histogramdd(data,(bins,bins))
             h = h*1./c
@@ -231,7 +232,7 @@ class SimBox:
 
         i = r.searchsorted(self.cfmaxr)
 
-        print "** Interpolation bounds",r[:i].min(),r[:i].max()
+        print ("** Interpolation bounds",r[:i].min(),r[:i].max())
         #interper = interp1d(r[:i],xi[:i],bounds_error=False,fill_value=0,kind='linear')
 
         assert(N.all(N.isfinite(r)))
@@ -283,9 +284,8 @@ class SimBox:
 
 
         if plot:
-            print "fuck",r.min(),r.max()
             pylab.plot(r,N.abs(xi),".")
-            print "maxlength",self.maxlength
+            print ("maxlength",self.maxlength)
             rr = N.arange(r.min(),self.maxlength,self.step/10.)
             pylab.loglog(rr,N.abs(tran(rr)),'k-')
             pylab.show()
@@ -314,12 +314,12 @@ def test():
 
     pylab.figure()
     pylab.hist(x.flatten(),bins=100)
-    print "std",N.std(x.flatten())
-    print 1./x.std()
+    print ("std",N.std(x.flatten()))
+    print (1./x.std())
 
     ko,pko = fftutils.powerspectrum(x,length)
-    print ko.min(),ko.max()
-    print "pk",pko.mean(),pko.mean()**.5
+    print (ko.min(),ko.max())
+    print ("pk",pko.mean(),pko.mean()**.5)
 
     bands = bins.logbins(ko.min(),ko.max(),20, )
     bx = (bands[1:]+bands[:-1])/2.
